@@ -22,6 +22,14 @@ dependencies {
 	implementation 'org.openjfx:javafx-base:16:win'
 }
 
+java {
+	sourceCompatibility JavaVersion.VERSION_16
+}
+
+compileJava {
+	options.compilerArgs.add('--enable-preview')
+}
+
 application {
 	mainModule.set('ritzow.notes.desktop')
 	mainClass.set('ritzow.notes.desktop.RunDesktop')
@@ -31,4 +39,6 @@ run {
 	doLast {
 		workingDir project.file('desktop')
 	}
+
+	jvmArgs.add('--enable-preview')
 }
