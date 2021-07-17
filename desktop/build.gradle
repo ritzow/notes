@@ -1,0 +1,34 @@
+plugins {
+	id 'java'
+	id 'application'
+}
+
+sourceSets {
+	main {
+		java {
+			srcDir 'src'
+		}
+
+		resources {
+			srcDir 'ui'
+		}
+	}
+}
+
+dependencies {
+	implementation 'org.openjfx:javafx-controls:16:win'
+	implementation 'org.openjfx:javafx-graphics:16:win'
+	implementation 'org.openjfx:javafx-fxml:16:win'
+	implementation 'org.openjfx:javafx-base:16:win'
+}
+
+application {
+	mainModule.set('ritzow.notes.desktop')
+	mainClass.set('ritzow.notes.desktop.RunDesktop')
+}
+
+run {
+	doLast {
+		workingDir project.file('desktop')
+	}
+}

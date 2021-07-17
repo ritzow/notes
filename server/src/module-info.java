@@ -1,0 +1,3 @@
+module ritzow.notes.server {
+
+}

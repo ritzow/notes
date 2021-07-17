@@ -1,0 +1,9 @@
+rootProject.name = 'ritzow-notes'
+include 'desktop'
+include 'server'
+
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral ()
+    }
+}
