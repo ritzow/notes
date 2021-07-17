@@ -1,23 +1,27 @@
 plugins {
-    id 'java'
-    id 'application'
+	id 'java'
+	id 'application'
 }
 
 sourceSets {
-    main {
-        java {
-            srcDir 'src'
-        }
-    }
+	main {
+		java {
+			srcDir 'src'
+		}
+	}
+}
+
+dependencies {
+	implementation 'org.hsqldb:hsqldb:2.6.0'
 }
 
 application {
-    mainModule.set('ritzow.notes.server')
-    mainClass.set('ritzow.notes.server.RunServer')
+	mainModule.set('ritzow.notes.server')
+	mainClass.set('ritzow.notes.server.RunServer')
 }
 
 run {
-    doLast {
-        workingDir project.file('server')
-    }
+	doLast {
+		workingDir project.file('server')
+	}
 }

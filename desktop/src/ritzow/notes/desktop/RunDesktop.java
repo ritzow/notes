@@ -16,7 +16,6 @@ public class RunDesktop {
 
 	public static void start() {
 		Stage stage = new Stage();
-		System.out.println(Path.of(".").toAbsolutePath());
 		try(var in = Files.newInputStream(Path.of("ui").resolve("main.fxml"))) {
 			stage.setScene(new Scene(new FXMLLoader(StandardCharsets.UTF_8).load(in)));
 			stage.show();
