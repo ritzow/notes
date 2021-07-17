@@ -8,6 +8,7 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -53,12 +54,21 @@ public class RunServer {
 				for(var key : select.selectedKeys()) {
 					if(key.channel() instanceof ServerSocketChannel serv) {
 						SocketChannel connection = serv.accept();
+						connection.configureBlocking(false);
 						connection.register(select, SelectionKey.OP_READ);
 					} else if(key.channel() instanceof SocketChannel conn) {
-						buf.clear();
-						conn.read(buf);
-						buf.flip();
-						System.out.println(buf.asCharBuffer());
+						if(key.isReadable()) {
+							buf.clear();
+							int status = conn.read(buf);
+							buf.flip();
+							if(status == -1) {
+								conn.close();
+								key.cancel();
+							} else {
+								System.out.println("From " + conn.getRemoteAddress() + ":\"" +
+									StandardCharsets.UTF_8.decode(buf) + "\"");
+							};
+						}
 					} else {
 						throw new RuntimeException("Unknown channel " + key.channel());
 					}
