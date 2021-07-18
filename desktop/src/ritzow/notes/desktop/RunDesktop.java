@@ -18,11 +18,10 @@ import javafx.fxml.FXMLLoader;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
-import javafx.scene.control.TextInputControl;
-import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
+import org.fxmisc.richtext.InlineCssTextArea;
 import org.fxmisc.richtext.InlineCssTextField;
 
 public class RunDesktop {
@@ -40,18 +39,16 @@ public class RunDesktop {
 		Scene scene;
 		try {
 			scene = new Scene(load(programDir().resolve("ui").resolve("main.fxml")));
-			//if(scene.getRoot().lookup("#textPlaceholder") instanceof Pane pane) {
-			//	pane.getChildren().add(load(programDir().resolve("ui").resolve("text.fxml")));
-			//}
 		} catch(IOException e) {
 			e.printStackTrace();
+			Platform.exit();
 			return;
 		}
 		scene.setFill(Color.TRANSPARENT);
 		Node toolbar = scene.lookup("#toolbar");
 		Button closeButton = (Button)scene.lookup("#closeButton");
 		Button uploadButton = (Button)scene.lookup("#uploadButton");
-		TextInputControl notesContent = (TextInputControl)scene.lookup("#notesContent");
+		InlineCssTextArea notesContent = (InlineCssTextArea)scene.lookup("#notesContent");
 		InlineCssTextField ipField = (InlineCssTextField)scene.lookup("#ipField");
 		toolbar.setOnMousePressed(pressEvent -> {
 			toolbar.setOnMouseDragged(dragEvent -> {

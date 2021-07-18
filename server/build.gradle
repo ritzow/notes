@@ -11,8 +11,13 @@ sourceSets {
 	}
 }
 
+configurations {
+	hsqldb
+}
+
 dependencies {
-	implementation 'org.hsqldb:hsqldb:2.6.0'
+	hsqldb 'org.hsqldb:hsqldb:2.6.0'
+	implementation configurations.hsqldb.dependencies
 }
 
 java {
@@ -34,4 +39,10 @@ run {
 	}
 
 	jvmArgs.add('--enable-preview')
+}
+
+task databaseManager(type: JavaExec) {
+	group 'application'
+	classpath configurations.hsqldb.asPath
+	mainClass.set('org.hsqldb.util.DatabaseManagerSwing')
 }

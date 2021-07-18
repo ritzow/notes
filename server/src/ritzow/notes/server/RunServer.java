@@ -29,9 +29,14 @@ public class RunServer {
 
 		System.out.println("Database started");
 
-		try(var st = con.prepareStatement("SHUTDOWN")) {
-			st.executeUpdate();
-		}
+		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+			try(var st = con.prepareStatement("SHUTDOWN")) {
+				System.out.println("Shutting down");
+				st.executeUpdate();
+			} catch(SQLException throwables) {
+				throwables.printStackTrace();
+			}
+		}));
 
 		var listen4 = ServerSocketChannel
 			.open(StandardProtocolFamily.INET)
@@ -46,8 +51,6 @@ public class RunServer {
 			listen4.register(select, SelectionKey.OP_ACCEPT);
 			listen6.register(select, SelectionKey.OP_ACCEPT);
 
-			ByteBuffer buf = ByteBuffer.allocateDirect(65535);
-
 			while(true) {
 				select.select();
 
@@ -55,19 +58,25 @@ public class RunServer {
 					if(key.channel() instanceof ServerSocketChannel serv) {
 						SocketChannel connection = serv.accept();
 						connection.configureBlocking(false);
-						connection.register(select, SelectionKey.OP_READ);
-					} else if(key.channel() instanceof SocketChannel conn) {
+						connection.register(select, SelectionKey.OP_READ, new ConnectionState());
+					} else if(key.channel() instanceof SocketChannel connection) {
 						if(key.isReadable()) {
-							buf.clear();
-							int status = conn.read(buf);
-							buf.flip();
-							if(status == -1) {
-								conn.close();
-								key.cancel();
-							} else {
-								System.out.println("From " + conn.getRemoteAddress() + ":\"" +
-									StandardCharsets.UTF_8.decode(buf) + "\"");
-							};
+							ConnectionState state = (ConnectionState)key.attachment();
+							ProcessState newState = process(connection, state);
+							System.out.println(state.state);
+							switch(newState) {
+								case MALFORMED -> {
+									connection.close();
+									key.cancel();
+									System.err.println("Malformed data from " + connection + " during " + state.state);
+								}
+								case DONE -> {
+									connection.close();
+									key.cancel();
+									System.out.println("Done with " + connection);
+								}
+								default -> state.state = newState;
+							}
 						}
 					} else {
 						throw new RuntimeException("Unknown channel " + key.channel());
@@ -76,8 +85,120 @@ public class RunServer {
 
 				select.selectedKeys().clear();
 			}
-
-			//System.out.println("Database shutdown started");
 		}
+	}
+
+	private static class ConnectionState {
+		ProcessState state;
+		private final ByteBuffer readBuffer;
+		private byte[] username;
+		private Integer noteLength;
+		/* TODO need note storage buffer */
+
+		private ConnectionState() {
+			this.readBuffer = ByteBuffer.allocateDirect(8192);
+			this.state = ProcessState.READ_USERNAME_LENGTH;
+		}
+	}
+
+	private enum ProcessState {
+		READ_USERNAME_LENGTH,
+		READ_USERNAME_TEXT,
+		READ_NOTE_LENGTH,
+		READ_NOTE_TEXT,
+		DONE,
+		MALFORMED
+	}
+
+	private static final int
+		MAX_USERNAME_LENGTH = 1_0000,
+		MAX_NOTE_LENGTH = 4_128;
+
+	private static ProcessState process(SocketChannel conn, ConnectionState state) throws IOException {
+		switch(state.state) {
+			case READ_USERNAME_LENGTH -> {
+				switch(readyBytes(conn, state.readBuffer, Integer.BYTES)) {
+					case READY -> {
+						int usernameLength = state.readBuffer.getInt(0);
+						if(usernameLength > MAX_USERNAME_LENGTH) {
+							return ProcessState.MALFORMED;
+						}
+						state.username = new byte[usernameLength];
+						state.readBuffer.clear();
+						return ProcessState.READ_USERNAME_TEXT;
+					}
+					case WAIT -> {
+						return ProcessState.READ_USERNAME_LENGTH;
+					}
+					case CLOSE -> {
+						return ProcessState.MALFORMED;
+					}
+				}
+			}
+			case READ_USERNAME_TEXT -> {
+				switch(readyBytes(conn, state.readBuffer, state.username.length)) {
+					case READY -> {
+						state.readBuffer.get(0, state.username).clear();
+						return ProcessState.READ_NOTE_LENGTH;
+					}
+					case WAIT -> {
+						return ProcessState.READ_USERNAME_TEXT;
+					}
+					case CLOSE -> {
+						return ProcessState.MALFORMED;
+					}
+				}
+			}
+			case READ_NOTE_LENGTH -> {
+				switch(readyBytes(conn, state.readBuffer, Integer.BYTES)) {
+					case READY -> {
+						int noteLength = state.readBuffer.getInt(0);
+						if(noteLength > MAX_NOTE_LENGTH) {
+							return ProcessState.MALFORMED;
+						}
+						state.noteLength = noteLength;
+						state.readBuffer.clear();
+						return ProcessState.READ_NOTE_TEXT;
+					}
+					case WAIT -> {
+						return ProcessState.READ_NOTE_LENGTH;
+					}
+					case CLOSE -> {
+						System.out.println("close");
+						return ProcessState.MALFORMED;
+					}
+				}
+			}
+			case READ_NOTE_TEXT -> {
+				if(state.noteLength == 0) {
+					return ProcessState.DONE;
+				}
+
+				if(conn.read(state.readBuffer) == -1) {
+					return ProcessState.MALFORMED;
+				}
+
+				System.out.println("From " + conn.getRemoteAddress() + ":\"" +
+					StandardCharsets.UTF_8.decode(state.readBuffer.flip()) + "\"");
+				/* TODO read all data, won't always return done in one go, or at all! (might close early) */
+				return ProcessState.DONE;
+			}
+			case DONE, MALFORMED -> throw new IllegalStateException();
+		}
+		return null;
+	}
+
+	private enum ReadResult {
+		READY,
+		WAIT,
+		CLOSE
+	}
+
+	private static ReadResult readyBytes(SocketChannel socket, ByteBuffer buf, int count) throws IOException {
+		buf.limit(count);
+		if(socket.read(buf) == -1) {
+			return ReadResult.CLOSE;
+		}
+		return buf.position() >= (count - 1) ? ReadResult.READY : ReadResult.WAIT;
 	}
 }

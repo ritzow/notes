@@ -35,8 +35,7 @@
          <Text strokeType="OUTSIDE" strokeWidth="0.0" text="IP Address" />
          <InlineCssTextField id="ipField" prefHeight="26.0" prefWidth="590.0" />
          <Text strokeType="OUTSIDE" strokeWidth="0.0" text="Note" />
-         <!--<Pane id="textPlaceholder" VBox.vgrow="ALWAYS" />-->
-         <InlineCssTextArea />
+         <InlineCssTextArea id="notesContent" />
       </VBox>
       <HBox alignment="BOTTOM_RIGHT">
          <VBox.margin>
