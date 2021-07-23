@@ -6,8 +6,8 @@
 <?import javafx.scene.text.*?>
 <?import org.fxmisc.richtext.*?>
 
-<Pane prefHeight="472.0" prefWidth="694.0" style="-fx-background-color: transparent;" xmlns="http://javafx.com/javafx/11.0.1" xmlns:fx="http://javafx.com/fxml/1">
-   <VBox alignment="CENTER" layoutX="42.0" layoutY="36.0" prefHeight="400.0" prefWidth="600.0" style="-fx-background-radius: 5; -fx-background-color: lightgray; -fx-effect: dropshadow(gaussian, rgb(0, 0, 0), 15, 0.0, 2, 2);">
+<Pane prefHeight="443.0" prefWidth="634.0" style="-fx-background-color: transparent;" xmlns="http://javafx.com/javafx/11.0.1" xmlns:fx="http://javafx.com/fxml/1">
+   <VBox alignment="CENTER" layoutX="17.0" layoutY="22.0" prefHeight="400.0" prefWidth="600.0" style="-fx-background-radius: 5; -fx-background-color: lightgray; -fx-effect: dropshadow(gaussian, rgb(0, 0, 0), 15, 0.0, 2, 2);">
       <BorderPane id="toolbar">
          <left>
             <Text strokeType="OUTSIDE" strokeWidth="0.0" text="Online Notes Service" BorderPane.alignment="CENTER">
@@ -33,9 +33,9 @@
             <Insets bottom="5.0" left="5.0" right="5.0" top="5.0" />
          </VBox.margin>
          <Text strokeType="OUTSIDE" strokeWidth="0.0" text="IP Address" />
-         <InlineCssTextField id="ipField" prefHeight="26.0" prefWidth="590.0" />
+         <InlineCssTextField id="ipField" focusTraversable="true" prefHeight="26.0" prefWidth="590.0" />
          <Text strokeType="OUTSIDE" strokeWidth="0.0" text="Note" />
-         <InlineCssTextArea id="notesContent" />
+         <InlineCssTextArea id="notesContent" focusTraversable="true" />
       </VBox>
       <HBox alignment="BOTTOM_RIGHT">
          <VBox.margin>

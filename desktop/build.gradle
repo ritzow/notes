@@ -21,6 +21,7 @@ dependencies {
 	implementation 'org.openjfx:javafx-fxml:16:win'
 	implementation 'org.openjfx:javafx-base:16:win'
 	implementation 'org.fxmisc.richtext:richtextfx:0.10.6'
+	implementation 'com.google.guava:guava:30.1.1-jre'
 }
 
 java {
