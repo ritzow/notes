@@ -3,6 +3,8 @@
 package ritzow.notes.server;
 
 import java.io.IOException;
+import java.io.Reader;
+import java.io.StringReader;
 import java.net.InetSocketAddress;
 import java.net.StandardProtocolFamily;
 import java.nio.ByteBuffer;
@@ -16,26 +18,7 @@ import java.sql.*;
 import org.hsqldb.server.Server;
 
 public class RunServer {
-	public static void main(String[] args) throws SQLException {
-		Server server = new Server();
-		server.setErrWriter(null);
-		server.setLogWriter(null);
-		server.setSilent(true);
-		server.setTrace(false);
-		server.setTls(false);
-		server.setDatabaseName(0, "notes");
-		server.setDatabasePath(0, "file:testdb/db");
-		server.setAddress("::1");
-		server.start();
-
-		//Connection con = DriverManager.getConnection("jdbc:hsqldb:file:server/db;shutdown=true", "SA", "");
-
-		Connection db = DriverManager.getConnection("jdbc:hsqldb:hsql://[::1]/notes");
-
-		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-
-		}));
-
+	public static void main(String[] args) {
 		System.out.println("Server started.");
 
 		try(Selector select = Selector.open()) {
@@ -49,19 +32,38 @@ public class RunServer {
 				.bind(new InetSocketAddress("::1", 5432))
 				.configureBlocking(false)
 				.register(select, SelectionKey.OP_ACCEPT);
-			do {
-				listen(select, db);
-			} while(true);
+			Connection db = openDatabase();
+
+			try {
+				do {
+					listen(select, db);
+				} while(true);
+			} catch(SQLException e) {
+				try(var st = db.prepareStatement("SHUTDOWN")) {
+					System.out.println("Shutting down");
+					st.executeUpdate();
+				} catch(SQLException throwables) {
+					throwables.printStackTrace();
+				}
+			}
 		} catch(IOException | SQLException e) {
 			e.printStackTrace();
 		}
+	}
 
-		try(var st = db.prepareStatement("SHUTDOWN")) {
-			System.out.println("Shutting down");
-			st.executeUpdate();
-		} catch(SQLException throwables) {
-			throwables.printStackTrace();
-		}
+	private static Connection openDatabase() throws SQLException {
+		Server server = new Server();
+		server.setErrWriter(null);
+		server.setLogWriter(null);
+		server.setSilent(true);
+		server.setTrace(false);
+		server.setTls(false);
+		server.setDatabaseName(0, "notes");
+		server.setDatabasePath(0, "file:testdb/db");
+		server.setAddress("::1");
+		server.start();
+		//DriverManager.getConnection("jdbc:hsqldb:file:server/db;shutdown=true");
+		return DriverManager.getConnection("jdbc:hsqldb:hsql://[::1]/notes");
 	}
 
 	private static void listen(Selector select, Connection db) throws IOException, SQLException {
@@ -103,26 +105,18 @@ public class RunServer {
 		select.selectedKeys().clear();
 	}
 
-	private static void setupProcedures(Connection db) throws SQLException {
-		db.prepareStatement("""
-			create procedure get_or_create_user(in name varchar(255))
-			""");
-	}
-
 	private static void saveNote(Connection db, byte[] username, CharBuffer note) throws SQLException {
 		//https://devblogs.microsoft.com/azure-sql/the-insert-if-not-exists-challenge-a-solution/
 		String name = new String(username, StandardCharsets.UTF_8);
-		System.out.println(name + ": " + note);
-		//PreparedStatement st = db.prepareStatement("SELECT * FROM USERDATA WHERE USERNAME = ?");
-		//st.setNString(1, name);
-		/* Print out the user ID */
-		try(CallableStatement call = db.prepareCall("call get_or_create_user(?)")) {
+		try(CallableStatement call = db.prepareCall("call update_user_note(?, ?, ?)")) {
 			call.setString(1, name);
+			//db.createClob().
+			//call.setClob(2, );
+			call.registerOutParameter(3, Types.INTEGER);
 			/* TODO this is a blocking call, would cause problems on a real server like this */
 			call.execute();
-			try(ResultSet userEntry = call.getResultSet()) {
-				System.out.println("User \"" + name + "\" has ID " + userEntry.getInt(1));
-			}
+			int id = call.getInt(3);
+			System.out.println("User ID " + id + " connected.");
 		}
 	}
 
@@ -130,9 +124,7 @@ public class RunServer {
 		ProcessState state;
 		private final ByteBuffer readBuffer;
 		private byte[] username;
-		private int noteRead;
 		private ByteBuffer noteBuffer;
-		/* TODO need note storage buffer */
 
 		private ConnectionState() {
 			this.readBuffer = ByteBuffer.allocateDirect(8192);
