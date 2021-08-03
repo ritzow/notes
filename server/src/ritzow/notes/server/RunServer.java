@@ -5,6 +5,7 @@ package ritzow.notes.server;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
+import java.io.Writer;
 import java.net.InetSocketAddress;
 import java.net.StandardProtocolFamily;
 import java.nio.ByteBuffer;
@@ -105,13 +106,16 @@ public class RunServer {
 		select.selectedKeys().clear();
 	}
 
-	private static void saveNote(Connection db, byte[] username, CharBuffer note) throws SQLException {
+	private static void saveNote(Connection db, byte[] username, CharBuffer note) throws SQLException, IOException {
 		//https://devblogs.microsoft.com/azure-sql/the-insert-if-not-exists-challenge-a-solution/
-		String name = new String(username, StandardCharsets.UTF_8);
 		try(CallableStatement call = db.prepareCall("call update_user_note(?, ?, ?)")) {
-			call.setString(1, name);
-			//db.createClob().
-			//call.setClob(2, );
+			call.setString(1, new String(username, StandardCharsets.UTF_8));
+			/* TODO truncate? */
+			Clob handle = db.createClob();
+			Writer writer = handle.setCharacterStream(1);
+			writer.write(note.toString());
+			writer.close();
+			call.setClob(2, handle);
 			call.registerOutParameter(3, Types.INTEGER);
 			/* TODO this is a blocking call, would cause problems on a real server like this */
 			call.execute();

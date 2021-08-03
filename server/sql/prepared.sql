@@ -8,7 +8,7 @@ BEGIN ATOMIC
 		SET id_temp = IDENTITY();
 		INSERT INTO NOTES (userid, notedata) VALUES (id_temp, note);
 	ELSE
-		UPDATE NOTES SET (userid, notedata) = (id_temp, note);
+		UPDATE NOTES SET notedata = note WHERE userid = id_temp;
 	END IF;
 	SET id = id_temp;
 END
