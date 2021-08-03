@@ -1,3 +1,4 @@
+//file:noinspection GroovyAssignabilityCheck
 plugins {
 	id 'java'
 	id 'application'
@@ -9,6 +10,12 @@ sourceSets {
 			srcDir 'src'
 		}
 	}
+
+	test {
+		java {
+			srcDir 'test'
+		}
+	}
 }
 
 configurations {
@@ -18,6 +25,8 @@ configurations {
 dependencies {
 	hsqldb 'org.hsqldb:hsqldb:2.6.0'
 	implementation configurations.hsqldb.dependencies
+	testImplementation 'org.junit.jupiter:junit-jupiter:5.7.2'
+	/* Apache Cassandra driver https://github.com/datastax/java-driver */
 }
 
 java {
@@ -25,12 +34,16 @@ java {
 }
 
 compileJava {
-	options.compilerArgs.add('--enable-preview')
+	options.compilerArgs += '--enable-preview'
+}
+
+compileTestJava {
+	options.compilerArgs += '--enable-preview'
 }
 
 application {
-	mainModule.set('ritzow.notes.server')
-	mainClass.set('ritzow.notes.server.RunServer')
+	mainModule = 'ritzow.notes.server'
+	mainClass = 'ritzow.notes.server.RunServer'
 }
 
 run {
@@ -38,11 +51,18 @@ run {
 		workingDir project.file('server')
 	}
 
-	jvmArgs.add('--enable-preview')
+	jvmArgs += '--enable-preview'
+}
+
+test {
+	useJUnitPlatform()
+	//reports.html.required = false
+	jvmArgs += '--enable-preview'
 }
 
 task databaseManager(type: JavaExec) {
 	group 'application'
 	classpath configurations.hsqldb.asPath
-	mainClass.set('org.hsqldb.util.DatabaseManagerSwing')
+	mainClass = 'org.hsqldb.util.DatabaseManagerSwing'
+	args "--url", "jdbc:hsqldb:hsql://[::1]/notes"
 }
