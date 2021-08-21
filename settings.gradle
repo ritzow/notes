@@ -1,9 +1,3 @@
-rootProject.name = 'ritzow-notes'
+rootProject.name = 'notes'
 include 'desktop'
 include 'server'
-
-dependencyResolutionManagement {
-    repositories {
-        mavenCentral ()
-    }
-}
