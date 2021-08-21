@@ -1,16 +1,4 @@
-//file:noinspection GroovyAssignabilityCheck
-plugins {
-	id 'java'
-	id 'application'
-}
-
 sourceSets {
-	main {
-		java {
-			srcDir 'src'
-		}
-	}
-
 	test {
 		java {
 			srcDir 'test'
@@ -29,18 +17,6 @@ dependencies {
 	/* Apache Cassandra driver https://github.com/datastax/java-driver */
 }
 
-java {
-	sourceCompatibility JavaVersion.VERSION_16
-}
-
-compileJava {
-	options.compilerArgs += '--enable-preview'
-}
-
-compileTestJava {
-	options.compilerArgs += '--enable-preview'
-}
-
 application {
 	mainModule = 'ritzow.notes.server'
 	mainClass = 'ritzow.notes.server.RunServer'
@@ -51,12 +27,6 @@ run {
 		workingDir project.file('server')
 	}
 
-	jvmArgs += '--enable-preview'
-}
-
-test {
-	useJUnitPlatform()
-	//reports.html.required = false
 	jvmArgs += '--enable-preview'
 }
 

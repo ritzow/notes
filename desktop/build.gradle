@@ -1,14 +1,5 @@
-plugins {
-	id 'java'
-	id 'application'
-}
-
 sourceSets {
 	main {
-		java {
-			srcDir 'src'
-		}
-
 		resources {
 			srcDir 'ui'
 		}
@@ -21,20 +12,14 @@ dependencies {
 	implementation 'org.openjfx:javafx-fxml:16:win'
 	implementation 'org.openjfx:javafx-base:16:win'
 	implementation 'org.fxmisc.richtext:richtextfx:0.10.6'
+	//implementation 'io.github.palexdev:materialfx:11.12.0'
+	//implementation 'org.jfxtras:jmetro:11.6.14'
 	implementation 'com.google.guava:guava:30.1.1-jre'
 }
 
-java {
-	sourceCompatibility JavaVersion.VERSION_16
-}
-
-compileJava {
-	options.compilerArgs.add('--enable-preview')
-}
-
 application {
-	mainModule.set('ritzow.notes.desktop')
-	mainClass.set('ritzow.notes.desktop.RunDesktop')
+	mainModule = 'ritzow.notes.desktop'
+	mainClass = 'ritzow.notes.desktop.RunDesktop'
 }
 
 run {
@@ -42,5 +27,5 @@ run {
 		workingDir project.file('desktop')
 	}
 
-	jvmArgs.add('--enable-preview')
+	jvmArgs += '--enable-preview'
 }

@@ -1,0 +1,38 @@
+plugins {
+	id 'java'
+	id 'application'
+}
+
+subprojects {
+	apply plugin: 'java'
+	apply plugin: 'application'
+
+	sourceSets {
+		main {
+			java {
+				srcDir 'src'
+			}
+		}
+	}
+
+	compileJava {
+		options.compilerArgs += '--enable-preview'
+	}
+
+	compileTestJava {
+		options.compilerArgs += '--enable-preview'
+	}
+
+	java {
+		sourceCompatibility JavaVersion.VERSION_16
+	}
+
+	test {
+		useJUnitPlatform()
+		jvmArgs += '--enable-preview'
+	}
+
+	compileJava {
+		options.compilerArgs += '--enable-preview'
+	}
+}
