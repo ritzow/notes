@@ -3,8 +3,6 @@
 package ritzow.notes.server;
 
 import java.io.IOException;
-import java.io.Reader;
-import java.io.StringReader;
 import java.io.Writer;
 import java.net.InetSocketAddress;
 import java.net.StandardProtocolFamily;
@@ -112,12 +110,12 @@ public class RunServer {
 			call.setString(1, new String(username, StandardCharsets.UTF_8));
 			/* TODO truncate? */
 			Clob handle = db.createClob();
-			Writer writer = handle.setCharacterStream(1);
-			writer.write(note.toString());
-			writer.close();
+			try(Writer writer = handle.setCharacterStream(1)) {
+				writer.write(note.toString());
+			}
 			call.setClob(2, handle);
 			call.registerOutParameter(3, Types.INTEGER);
-			/* TODO this is a blocking call, would cause problems on a real server like this */
+			/* TODO this is a blocking call */
 			call.execute();
 			int id = call.getInt(3);
 			System.out.println("User ID " + id + " connected.");
