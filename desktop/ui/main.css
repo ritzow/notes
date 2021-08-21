@@ -1,0 +1,10 @@
+.styled-text-area, .notes-area {
+	-fx-border-color: black;
+	-fx-border-radius: 5;
+	-fx-border-width: 5;
+	-fx-background-radius: 5;
+	-fx-background-insets: 1;
+	-fx-background-color: white;
+	-fx-focus-color: transparent;
+	-fx-faint-focus-color: transparent;
+}

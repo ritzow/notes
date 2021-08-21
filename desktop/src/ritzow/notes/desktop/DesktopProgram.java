@@ -13,32 +13,37 @@ import java.util.concurrent.ForkJoinPool;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Node;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import org.fxmisc.richtext.InlineCssTextArea;
-import org.fxmisc.richtext.InlineCssTextField;
 
 public class DesktopProgram {
 	private final Node toolbar;
 	private final Button closeButton;
 	private final Button uploadButton;
 	private final InlineCssTextArea notesContent;
-	private final InlineCssTextField ipField;
+	private final InlineCssTextArea ipField;
+	private final InlineCssTextArea usernameField;
 	private final Stage stage;
 
 	public DesktopProgram() throws IOException {
 		stage = new Stage(StageStyle.TRANSPARENT);
 		stage.setTitle("Online Notes Service");
-		Scene scene = new Scene(load(programDir().resolve("ui").resolve("main.fxml")));
+		Parent root = load(programDir().resolve("ui").resolve("main.fxml"));
+		Scene scene = new Scene(root);
+		//JMetro metro = new JMetro(root, Style.DARK);
+		//metro.setScene(scene);
 		scene.setFill(Color.TRANSPARENT);
 		toolbar = scene.lookup("#toolbar");
 		closeButton = (Button)scene.lookup("#closeButton");
 		uploadButton = (Button)scene.lookup("#uploadButton");
 		notesContent = (InlineCssTextArea)scene.lookup("#notesContent");
-		ipField = (InlineCssTextField)scene.lookup("#ipField");
+		ipField = (InlineCssTextArea)scene.lookup("#ipField");
+		usernameField = (InlineCssTextArea)scene.lookup("#usernameField");
 		toolbar.setOnMousePressed(pressEvent -> {
 			toolbar.setOnMouseDragged(dragEvent -> {
 				stage.setX(dragEvent.getScreenX() - pressEvent.getSceneX());
@@ -59,10 +64,10 @@ public class DesktopProgram {
 	}
 
 	private void onUploadButton(ActionEvent event) {
-		String ip = ipField.getText().isBlank() ? ipField.getPromptText().getText() : ipField.getText();
+		String ip = ipField.getText();
 		try {
 			InetAddress address = InetAddresses.forString(ip);
-			upload(new InetSocketAddress(address, 5432), "solomon", notesContent.getText());
+			upload(new InetSocketAddress(address, 5432), usernameField.getText(), notesContent.getText());
 		} catch(IllegalArgumentException e) {
 			System.err.println(ip + " is not a valid IP address.");
 		}
