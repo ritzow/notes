@@ -6,6 +6,7 @@ pipeline {
 				withGradle {
 					sh 'gradle build'
 				}
+				archiveArtifacts artifacts: 'build/distributions/*', fingerprint: true
 			}
 		}
 	}
