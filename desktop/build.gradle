@@ -23,9 +23,5 @@ application {
 }
 
 run {
-	doLast {
-		workingDir project.file('desktop')
-	}
-
 	jvmArgs += '--enable-preview'
 }
