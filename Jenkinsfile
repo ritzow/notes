@@ -4,9 +4,10 @@ pipeline {
 		stage('Build') {
 			steps {
 				withGradle {
-					sh 'gradle build'
+					sh 'gradle :desktop:jar :server:jar'
 				}
-				archiveArtifacts artifacts: 'build/distributions/*', fingerprint: true
+				archiveArtifacts artifacts: 'desktop/build/distributions/*.jar', fingerprint: true
+				archiveArtifacts artifacts: 'server/build/distributions/*.jar', fingerprint: true
 			}
 		}
 	}
