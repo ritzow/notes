@@ -7,13 +7,11 @@ import java.io.Writer;
 import java.net.InetSocketAddress;
 import java.net.StandardProtocolFamily;
 import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
+import java.nio.channels.*;
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.hsqldb.server.Server;
 
 public class RunServer {
@@ -68,12 +66,22 @@ public class RunServer {
 	private static void listen(Selector select, Connection db) throws IOException, SQLException {
 		select.select();
 
+		ExecutorService pool = Executors.newCachedThreadPool();
+
 		for(var key : select.selectedKeys()) {
 			if(key.channel() instanceof ServerSocketChannel serv) {
 				SocketChannel connection = serv.accept();
-				connection.configureBlocking(false);
-				connection.register(select, SelectionKey.OP_READ, new ConnectionState());
-			} else if(key.channel() instanceof SocketChannel connection) {
+				pool.execute(() -> {
+					try {
+						System.out.println("Opened connection to " + connection.getRemoteAddress());
+						process(db, connection);
+					} catch(IOException | SQLException e) {
+						e.printStackTrace();
+					}
+				});
+				//connection.configureBlocking(false);
+				//connection.register(select, SelectionKey.OP_READ, new ConnectionState());
+			} /*else if(key.channel() instanceof SocketChannel connection) {
 				if(key.isReadable()) {
 					ConnectionState state = (ConnectionState)key.attachment();
 					try {
@@ -96,7 +104,7 @@ public class RunServer {
 						System.err.println(e.getMessage());
 					}
 				}
-			} else {
+			}*/ else {
 				throw new RuntimeException("Unknown channel " + key.channel());
 			}
 		}
@@ -104,133 +112,57 @@ public class RunServer {
 		select.selectedKeys().clear();
 	}
 
-	private static void saveNote(Connection db, byte[] username, CharBuffer note) throws SQLException, IOException {
+	private static void saveNote(Connection db, String username, String note) throws SQLException, IOException {
 		//https://devblogs.microsoft.com/azure-sql/the-insert-if-not-exists-challenge-a-solution/
 		try(CallableStatement call = db.prepareCall("call update_user_note(?, ?, ?)")) {
-			call.setString(1, new String(username, StandardCharsets.UTF_8));
+			call.setString(1, username);
 			/* TODO truncate? */
 			Clob handle = db.createClob();
 			try(Writer writer = handle.setCharacterStream(1)) {
-				writer.write(note.toString());
+				writer.write(note);
 			}
 			call.setClob(2, handle);
 			call.registerOutParameter(3, Types.INTEGER);
 			/* TODO this is a blocking call */
 			call.execute();
 			int id = call.getInt(3);
-			System.out.println("User ID " + id + " connected.");
+			System.out.println("User ID " + id + " connected and updated note to " + note.codePoints().count() + " chars.");
 		}
-	}
-
-	private static class ConnectionState {
-		ProcessState state;
-		private final ByteBuffer readBuffer;
-		private byte[] username;
-		private ByteBuffer noteBuffer;
-
-		private ConnectionState() {
-			this.readBuffer = ByteBuffer.allocateDirect(8192);
-			this.state = ProcessState.READ_USERNAME_LENGTH;
-		}
-	}
-
-	private enum ProcessState {
-		READ_USERNAME_LENGTH,
-		READ_USERNAME_TEXT,
-		READ_NOTE_LENGTH,
-		READ_NOTE_TEXT,
-		DONE,
-		MALFORMED
 	}
 
 	private static final int
 		MAX_USERNAME_LENGTH = 1_0000,
 		MAX_NOTE_LENGTH = 4_128;
 
-	private static ProcessState process(Connection db, SocketChannel conn, ConnectionState state)
+	private static void process(Connection db, SocketChannel conn)
 		throws IOException, SQLException {
-		switch(state.state) {
-			case READ_USERNAME_LENGTH -> {
-				switch(readyBytes(conn, state.readBuffer, Integer.BYTES)) {
-					case READY -> {
-						int usernameLength = state.readBuffer.getInt(0);
-						if(usernameLength > MAX_USERNAME_LENGTH) {
-							return ProcessState.MALFORMED;
-						}
-						state.username = new byte[usernameLength];
-						state.readBuffer.clear();
-						return ProcessState.READ_USERNAME_TEXT;
-					}
-					case WAIT -> {
-						return state.state;
-					}
-					case CLOSE -> {
-						return ProcessState.MALFORMED;
-					}
-				}
-			}
-			case READ_USERNAME_TEXT -> {
-				switch(readyBytes(conn, state.readBuffer, state.username.length)) {
-					case READY -> {
-						state.readBuffer.get(0, state.username).clear();
-						return ProcessState.READ_NOTE_LENGTH;
-					}
-					case WAIT -> {
-						return state.state;
-					}
-					case CLOSE -> {
-						return ProcessState.MALFORMED;
-					}
-				}
-			}
-			case READ_NOTE_LENGTH -> {
-				switch(readyBytes(conn, state.readBuffer, Integer.BYTES)) {
-					case READY -> {
-						int noteLength = state.readBuffer.getInt(0);
-						if(noteLength > MAX_NOTE_LENGTH) {
-							return ProcessState.MALFORMED;
-						}
-						state.noteBuffer = ByteBuffer.allocate(noteLength);
-						state.noteBuffer.put(state.readBuffer.flip().position(Integer.BYTES));
-						/* read buffer isn't used after this, don't clear it. */
-						return ProcessState.READ_NOTE_TEXT;
-					}
-					case WAIT -> {
-						return state.state;
-					}
-					case CLOSE -> {
-						return ProcessState.MALFORMED;
-					}
-				}
-			}
-			case READ_NOTE_TEXT -> {
-				if(conn.read(state.noteBuffer) == -1) {
-					return ProcessState.MALFORMED;
-				}
+		ByteBuffer dst = ByteBuffer.allocate(4);
+		readBytes(conn, dst, 4);
+		int usernameLength = dst.getInt(0);
 
-				if(!state.noteBuffer.hasRemaining()) {
-					CharBuffer note = StandardCharsets.UTF_8.decode(state.noteBuffer.flip());
-					saveNote(db, state.username, note);
-					return ProcessState.DONE;
-				}
-				return state.state;
-			}
-			case DONE, MALFORMED -> throw new IllegalStateException();
+		if(usernameLength > MAX_USERNAME_LENGTH) {
+			throw new RuntimeException("username length " + usernameLength + " longer than " + MAX_USERNAME_LENGTH);
 		}
-		return null;
+
+		dst = ByteBuffer.allocateDirect(usernameLength);
+		readBytes(conn, dst, usernameLength);
+		String username = StandardCharsets.UTF_8.decode(dst.flip()).toString();
+		readBytes(conn, dst.rewind(), 4);
+		int noteLength = dst.getInt(0);
+
+		if(noteLength > MAX_NOTE_LENGTH) {
+			throw new RuntimeException("note length " + noteLength + " longer than " + MAX_NOTE_LENGTH);
+		}
+
+		dst = dst.capacity() >= noteLength ? dst.clear() : ByteBuffer.allocateDirect(noteLength);
+		readBytes(conn, dst, noteLength);
+		saveNote(db, username, StandardCharsets.UTF_8.decode(dst.flip()).toString());
 	}
 
-	private enum ReadResult {
-		READY,
-		WAIT,
-		CLOSE
-	}
-
-	private static ReadResult readyBytes(SocketChannel socket, ByteBuffer buf, int count) throws IOException {
-		buf.limit(count);
-		if(socket.read(buf) == -1) {
-			return ReadResult.CLOSE;
-		}
-		return buf.position() >= (count - 1) ? ReadResult.READY : ReadResult.WAIT;
+	private static void readBytes(ReadableByteChannel in, ByteBuffer dst, int count) throws IOException {
+		dst.limit(count);
+		do {
+			in.read(dst);
+		} while(dst.hasRemaining());
 	}
 }
