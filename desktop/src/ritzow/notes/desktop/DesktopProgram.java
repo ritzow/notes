@@ -7,8 +7,6 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.concurrent.ForkJoinPool;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXMLLoader;
@@ -16,6 +14,7 @@ import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.image.Image;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
@@ -23,8 +22,6 @@ import org.fxmisc.richtext.InlineCssTextArea;
 
 public class DesktopProgram {
 	private final Node toolbar;
-	private final Button closeButton;
-	private final Button uploadButton;
 	private final InlineCssTextArea notesContent;
 	private final InlineCssTextArea ipField;
 	private final InlineCssTextArea usernameField;
@@ -33,23 +30,40 @@ public class DesktopProgram {
 	public DesktopProgram() throws IOException {
 		stage = new Stage(StageStyle.TRANSPARENT);
 		stage.setTitle("Online Notes Service");
-		Parent root = load(programDir().resolve("ui").resolve("main.fxml"));
+		try(var in = DesktopProgram.class.getClassLoader().getResourceAsStream("icon.png")) {
+			stage.getIcons().add(new Image(in));
+		}
+		FXMLLoader loader = new FXMLLoader();
+		loader.setCharset(StandardCharsets.UTF_8);
+		loader.setLocation(DesktopProgram.class.getClassLoader().getResource("main.fxml"));
+		Parent root = loader.load();
+
+		root.setOnDragDetected(event -> {
+			System.out.println(event.getPickResult());
+			root.startFullDrag();
+		});
+
+//		root.setOnMouseMoved(event -> {
+//			System.out.println(event.getPickResult());
+//			root.startf
+//		});
+
 		Scene scene = new Scene(root);
-		//JMetro metro = new JMetro(root, Style.DARK);
-		//metro.setScene(scene);
 		scene.setFill(Color.TRANSPARENT);
 		toolbar = scene.lookup("#toolbar");
-		closeButton = (Button)scene.lookup("#closeButton");
-		uploadButton = (Button)scene.lookup("#uploadButton");
+		Button closeButton = (Button)scene.lookup("#closeButton");
+		Button uploadButton = (Button)scene.lookup("#uploadButton");
 		notesContent = (InlineCssTextArea)scene.lookup("#notesContent");
 		ipField = (InlineCssTextArea)scene.lookup("#ipField");
 		usernameField = (InlineCssTextArea)scene.lookup("#usernameField");
+
 		toolbar.setOnMousePressed(pressEvent -> {
 			toolbar.setOnMouseDragged(dragEvent -> {
 				stage.setX(dragEvent.getScreenX() - pressEvent.getSceneX());
 				stage.setY(dragEvent.getScreenY() - pressEvent.getSceneY());
 			});
 		});
+
 		closeButton.setOnAction(event -> stage.close());
 		uploadButton.setOnAction(this::onUploadButton);
 		stage.setScene(scene);
@@ -59,10 +73,6 @@ public class DesktopProgram {
 		stage.show();
 	}
 
-	private static Path programDir() {
-		return Path.of(".");
-	}
-
 	private void onUploadButton(ActionEvent event) {
 		String ip = ipField.getText();
 		try {
@@ -70,12 +80,6 @@ public class DesktopProgram {
 			upload(new InetSocketAddress(address, 5432), usernameField.getText(), notesContent.getText());
 		} catch(IllegalArgumentException e) {
 			System.err.println(ip + " is not a valid IP address.");
-		}
-	}
-
-	public static <T> T load(Path file) throws IOException {
-		try(var in = Files.newInputStream(file)) {
-			return new FXMLLoader(StandardCharsets.UTF_8).load(in);
 		}
 	}
 
