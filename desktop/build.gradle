@@ -7,14 +7,14 @@ sourceSets {
 }
 
 dependencies {
+	implementation project(':share')
 	implementation 'org.openjfx:javafx-controls:16:win'
 	implementation 'org.openjfx:javafx-graphics:16:win'
 	implementation 'org.openjfx:javafx-fxml:16:win'
 	implementation 'org.openjfx:javafx-base:16:win'
 	implementation 'org.fxmisc.richtext:richtextfx:0.10.6'
-	//implementation 'io.github.palexdev:materialfx:11.12.0'
-	//implementation 'org.jfxtras:jmetro:11.6.14'
-	implementation 'com.google.guava:guava:30.1.1-jre'
+	implementation 'org.reactfx:reactfx:2.0-M5'
+	implementation 'com.google.guava:guava:31.0.1-jre'
 }
 
 application {
@@ -22,6 +22,11 @@ application {
 	mainClass = 'ritzow.notes.desktop.RunDesktop'
 }
 
+compileJava {
+	options.compilerArgs += '--add-reads'
+	options.compilerArgs += 'ritzow.notes.desktop=ALL-UNNAMED'
+}
+
 run {
-	jvmArgs += '--enable-preview'
+	jvmArgs '--enable-preview', '--add-reads', 'ritzow.notes.desktop=ALL-UNNAMED'
 }

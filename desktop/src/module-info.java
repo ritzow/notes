@@ -3,4 +3,5 @@ module ritzow.notes.desktop {
 	requires javafx.fxml;
 	requires org.fxmisc.richtext;
 	requires com.google.common;
+	requires net.ritzow.notes.share;
 }

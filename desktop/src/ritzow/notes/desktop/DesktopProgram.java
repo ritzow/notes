@@ -7,7 +7,11 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
+import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Node;
@@ -18,7 +22,9 @@ import javafx.scene.image.Image;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
+import net.ritzow.notes.share.NoteProto;
 import org.fxmisc.richtext.InlineCssTextArea;
+import org.fxmisc.richtext.model.*;
 
 public class DesktopProgram {
 	private final Node toolbar;
@@ -63,6 +69,9 @@ public class DesktopProgram {
 				stage.setY(dragEvent.getScreenY() - pressEvent.getSceneY());
 			});
 		});
+		
+		ipField.plainTextChanges().addObserver(this::onIpChange);
+		usernameField.plainTextChanges().addObserver(this::onUsernameChange);
 
 		closeButton.setOnAction(event -> stage.close());
 		uploadButton.setOnAction(this::onUploadButton);
@@ -71,6 +80,63 @@ public class DesktopProgram {
 
 	public void show() {
 		stage.show();
+	}
+
+	private void onIpChange(PlainTextChange change) {
+		queryUpdateNoteLocal();
+	}
+	
+	private volatile Instant lastUsernameChange;
+
+	private void onUsernameChange(PlainTextChange change) {
+		lastUsernameChange = Instant.now();
+		ForkJoinPool.commonPool().submit(() -> {
+			try {
+				Thread.sleep(Duration.ofSeconds(1).toMillis());
+				if(lastUsernameChange.plusSeconds(1).isBefore(Instant.now())) {
+					queryUpdateNoteLocal();
+				}
+			} catch(InterruptedException e) {
+				e.printStackTrace();
+			}
+		});
+	}
+
+	private void queryUpdateNoteLocal() {
+		if((InetAddresses.isInetAddress(ipField.getText()) && !usernameField.getText().isBlank())) {
+			ForkJoinPool.commonPool().execute(() -> {
+				try {
+					/* query note for user from IP and update local */
+					SocketChannel socket = SocketChannel.open(
+						new InetSocketAddress(InetAddresses.forString(ipField.getText()), 5432));
+					byte[] username = usernameField.getText().getBytes(StandardCharsets.UTF_8);
+					ByteBuffer buf = ByteBuffer.allocateDirect(Byte.BYTES + Integer.BYTES + username.length);
+					buf.put(NoteProto.MSG_QUERY).putInt(username.length).put(username).flip();
+					socket.write(buf);
+					/* Read in Note length and data */
+					read(socket, buf.clear().limit(Integer.BYTES));
+					int noteLength = buf.flip().getInt();
+					buf = ByteBuffer.allocate(noteLength);
+					read(socket, buf);
+					buf.flip();
+					/* TODO this probably isn't correct */
+					String note = StandardCharsets.UTF_8.decode(buf).toString();
+					System.out.println("Downloaded Note: \"" + note + "\"");
+					Platform.runLater(() -> {
+						var doc = ReadOnlyStyledDocument.fromString(note, "", "", SegmentOps.styledTextOps());
+						notesContent.getContent().replace(0, notesContent.getContent().length(), doc);
+					});
+				} catch(IOException e) {
+					e.printStackTrace();
+				}
+			});
+		}
+	}
+
+	private static void read(SocketChannel socket, ByteBuffer buf) throws IOException {
+		do {
+			socket.read(buf);
+		} while(buf.hasRemaining());
 	}
 
 	private void onUploadButton(ActionEvent event) {
@@ -84,14 +150,15 @@ public class DesktopProgram {
 	}
 
 	public static void upload(InetSocketAddress addr, String user, String note) {
-		var noteBuf = StandardCharsets.UTF_8.encode(note);
 		ForkJoinPool.commonPool().execute(() -> {
 			try {
 				SocketChannel socket = SocketChannel.open(addr);
-				var lenBuf = ByteBuffer.allocateDirect(Integer.BYTES);
+				var lenBuf = ByteBuffer.allocateDirect(Byte.BYTES + Integer.BYTES);
 				var userBuf = StandardCharsets.UTF_8.encode(user);
-				socket.write(lenBuf.putInt(userBuf.remaining()).flip());
+				/* TODO write message type */
+				socket.write(lenBuf.put(NoteProto.MSG_UPDATE).putInt(userBuf.remaining()).flip());
 				socket.write(userBuf);
+				ByteBuffer noteBuf = StandardCharsets.UTF_8.encode(note);
 				lenBuf.clear().putInt(noteBuf.remaining()).flip();
 				socket.write(lenBuf);
 				socket.write(noteBuf);

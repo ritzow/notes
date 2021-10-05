@@ -10,8 +10,10 @@ import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import net.ritzow.notes.share.NoteProto;
 import org.hsqldb.server.Server;
 
 public class RunServer {
@@ -75,36 +77,13 @@ public class RunServer {
 					try {
 						System.out.println("Opened connection to " + connection.getRemoteAddress());
 						process(db, connection);
+					} catch(ClosedByInterruptException e) {
+						System.out.println(connection + " closed by interrupt");
 					} catch(IOException | SQLException e) {
 						e.printStackTrace();
 					}
 				});
-				//connection.configureBlocking(false);
-				//connection.register(select, SelectionKey.OP_READ, new ConnectionState());
-			} /*else if(key.channel() instanceof SocketChannel connection) {
-				if(key.isReadable()) {
-					ConnectionState state = (ConnectionState)key.attachment();
-					try {
-						ProcessState newState = process(db, connection, state);
-						switch(newState) {
-							case MALFORMED -> {
-								connection.close();
-								key.cancel();
-								System.err.println("Malformed data from " + connection + " during " + state.state);
-							}
-							case DONE -> {
-								System.out.println("Done with " + connection);
-								connection.close();
-								key.cancel();
-							}
-							default -> state.state = newState;
-						}
-					} catch(IOException e) {
-						key.cancel();
-						System.err.println(e.getMessage());
-					}
-				}
-			}*/ else {
+			} else {
 				throw new RuntimeException("Unknown channel " + key.channel());
 			}
 		}
@@ -129,34 +108,89 @@ public class RunServer {
 			System.out.println("User ID " + id + " connected and updated note to " + note.codePoints().count() + " chars.");
 		}
 	}
+	
+	private static String getNote(Connection db, String username) throws SQLException, IOException {
+		try(PreparedStatement call = db.prepareStatement(
+			"SELECT notes.notedata FROM notes INNER JOIN userdata " +
+			"ON userdata.userid = notes.userid WHERE username = ?")) {
+			call.setString(1, username);
+			call.execute();
+			ResultSet result = call.getResultSet();
+			if(result != null && result.next()) {
+				Clob data = result.getClob(1);
+				if(data.length() > Integer.MAX_VALUE) {
+					throw new RuntimeException("Large clob");
+				}
+				return data.getSubString(1, (int)data.length());
+			} else {
+				return null;
+			}
+		}
+	}
 
 	private static final int
 		MAX_USERNAME_LENGTH = 1_0000,
 		MAX_NOTE_LENGTH = 4_128;
 
-	private static void process(Connection db, SocketChannel conn)
-		throws IOException, SQLException {
-		ByteBuffer dst = ByteBuffer.allocate(4);
-		readBytes(conn, dst, 4);
-		int usernameLength = dst.getInt(0);
-
+	private static void process(Connection db, SocketChannel conn) throws IOException, SQLException {
+		ByteBuffer dst = ByteBuffer.allocate(Integer.BYTES);
+		
+		readBytes(conn, dst, Byte.BYTES);
+		
+		switch(dst.flip().get()) {
+			case NoteProto.MSG_QUERY -> {
+				readBytes(conn, dst.clear(), Integer.BYTES);
+				int usernameLength = dst.flip().getInt();
+				String user = readUsername(conn, usernameLength);
+				String noteText = getNote(db, user);
+				if(noteText != null) {
+					System.out.println("Retrieved note text: \"" + noteText + "\"");
+				} else {
+					System.out.println("No note text");
+					noteText = "";
+				}
+				ByteBuffer note = StandardCharsets.UTF_8.encode(noteText);
+				dst.clear().putInt(note.remaining()).flip();
+				conn.write(new ByteBuffer[]{dst, note});
+			}
+			
+			case NoteProto.MSG_UPDATE -> {
+				readBytes(conn, dst.clear(), Integer.BYTES);
+				int usernameLength = dst.getInt(0);
+				
+				if(usernameLength > MAX_USERNAME_LENGTH) {
+					throw new RuntimeException("username length " + usernameLength + " longer than " + MAX_USERNAME_LENGTH);
+				}
+				
+				dst = ByteBuffer.allocateDirect(usernameLength);
+				readBytes(conn, dst, usernameLength);
+				String username = StandardCharsets.UTF_8.decode(dst.flip()).toString();
+				readBytes(conn, dst.rewind(), 4);
+				int noteLength = dst.getInt(0);
+				
+				if(noteLength > MAX_NOTE_LENGTH) {
+					throw new RuntimeException("note length " + noteLength + " longer than " + MAX_NOTE_LENGTH);
+				}
+				
+				dst = dst.capacity() >= noteLength ? dst.clear() : ByteBuffer.allocateDirect(noteLength);
+				readBytes(conn, dst, noteLength);
+				saveNote(db, username, StandardCharsets.UTF_8.decode(dst.flip()).toString());
+			}
+			
+			default -> {
+				System.out.println("Received unknown message type from client");
+			}
+		}
+	}
+	
+	private static String readUsername(ReadableByteChannel conn, int usernameLength) throws IOException {
 		if(usernameLength > MAX_USERNAME_LENGTH) {
 			throw new RuntimeException("username length " + usernameLength + " longer than " + MAX_USERNAME_LENGTH);
 		}
-
-		dst = ByteBuffer.allocateDirect(usernameLength);
-		readBytes(conn, dst, usernameLength);
-		String username = StandardCharsets.UTF_8.decode(dst.flip()).toString();
-		readBytes(conn, dst.rewind(), 4);
-		int noteLength = dst.getInt(0);
-
-		if(noteLength > MAX_NOTE_LENGTH) {
-			throw new RuntimeException("note length " + noteLength + " longer than " + MAX_NOTE_LENGTH);
-		}
-
-		dst = dst.capacity() >= noteLength ? dst.clear() : ByteBuffer.allocateDirect(noteLength);
-		readBytes(conn, dst, noteLength);
-		saveNote(db, username, StandardCharsets.UTF_8.decode(dst.flip()).toString());
+		
+		ByteBuffer buf = ByteBuffer.allocate(usernameLength);
+		readBytes(conn, buf, usernameLength);
+		return StandardCharsets.UTF_8.decode(buf.flip()).toString();
 	}
 
 	private static void readBytes(ReadableByteChannel in, ByteBuffer dst, int count) throws IOException {
