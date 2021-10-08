@@ -10,7 +10,6 @@ import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
-import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import net.ritzow.notes.share.NoteProto;
@@ -19,7 +18,7 @@ import org.hsqldb.server.Server;
 public class RunServer {
 	public static void main(String[] args) {
 		System.out.println("Server started.");
-
+		
 		try(Selector select = Selector.open()) {
 			ServerSocketChannel
 				.open(StandardProtocolFamily.INET)
@@ -75,7 +74,6 @@ public class RunServer {
 				SocketChannel connection = serv.accept();
 				pool.execute(() -> {
 					try {
-						System.out.println("Opened connection to " + connection.getRemoteAddress());
 						process(db, connection);
 					} catch(ClosedByInterruptException e) {
 						System.out.println(connection + " closed by interrupt");
@@ -105,11 +103,12 @@ public class RunServer {
 			/* TODO this is a blocking call */
 			call.execute();
 			int id = call.getInt(3);
-			System.out.println("User ID " + id + " connected and updated note to " + note.codePoints().count() + " chars.");
+			System.out.println("User ID " + id + " connected and updated note to "
+				+ note.codePoints().count() + " chars.");
 		}
 	}
 	
-	private static String getNote(Connection db, String username) throws SQLException, IOException {
+	private static String getNote(Connection db, String username) throws SQLException {
 		try(PreparedStatement call = db.prepareStatement(
 			"SELECT notes.notedata FROM notes INNER JOIN userdata " +
 			"ON userdata.userid = notes.userid WHERE username = ?")) {
@@ -133,6 +132,7 @@ public class RunServer {
 		MAX_NOTE_LENGTH = 4_128;
 
 	private static void process(Connection db, SocketChannel conn) throws IOException, SQLException {
+		System.out.println("Opened connection to " + conn.getRemoteAddress());
 		ByteBuffer dst = ByteBuffer.allocate(Integer.BYTES);
 		
 		readBytes(conn, dst, Byte.BYTES);
@@ -144,7 +144,7 @@ public class RunServer {
 				String user = readUsername(conn, usernameLength);
 				String noteText = getNote(db, user);
 				if(noteText != null) {
-					System.out.println("Retrieved note text: \"" + noteText + "\"");
+					System.out.println("Retrieved note text: " + noteText.length() + " characters");
 				} else {
 					System.out.println("No note text");
 					noteText = "";
@@ -165,8 +165,9 @@ public class RunServer {
 				dst = ByteBuffer.allocateDirect(usernameLength);
 				readBytes(conn, dst, usernameLength);
 				String username = StandardCharsets.UTF_8.decode(dst.flip()).toString();
-				readBytes(conn, dst.rewind(), 4);
-				int noteLength = dst.getInt(0);
+				dst = ByteBuffer.allocate(Integer.BYTES);
+				readBytes(conn, dst, Integer.BYTES);
+				int noteLength = dst.flip().getInt();
 				
 				if(noteLength > MAX_NOTE_LENGTH) {
 					throw new RuntimeException("note length " + noteLength + " longer than " + MAX_NOTE_LENGTH);
@@ -181,6 +182,11 @@ public class RunServer {
 				System.out.println("Received unknown message type from client");
 			}
 		}
+		
+		conn.shutdownInput();
+		conn.shutdownOutput();
+		System.out.println("Closing connection to " + conn.getRemoteAddress());
+		conn.close();
 	}
 	
 	private static String readUsername(ReadableByteChannel conn, int usernameLength) throws IOException {

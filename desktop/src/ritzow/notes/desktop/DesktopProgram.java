@@ -10,7 +10,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXMLLoader;
@@ -24,7 +23,9 @@ import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import net.ritzow.notes.share.NoteProto;
 import org.fxmisc.richtext.InlineCssTextArea;
-import org.fxmisc.richtext.model.*;
+import org.fxmisc.richtext.model.PlainTextChange;
+import org.fxmisc.richtext.model.ReadOnlyStyledDocument;
+import org.fxmisc.richtext.model.SegmentOps;
 
 public class DesktopProgram {
 	private final Node toolbar;
@@ -45,14 +46,9 @@ public class DesktopProgram {
 		Parent root = loader.load();
 
 		root.setOnDragDetected(event -> {
-			System.out.println(event.getPickResult());
+			//System.out.println(event.getPickResult());
 			root.startFullDrag();
 		});
-
-//		root.setOnMouseMoved(event -> {
-//			System.out.println(event.getPickResult());
-//			root.startf
-//		});
 
 		Scene scene = new Scene(root);
 		scene.setFill(Color.TRANSPARENT);
@@ -118,10 +114,13 @@ public class DesktopProgram {
 					int noteLength = buf.flip().getInt();
 					buf = ByteBuffer.allocate(noteLength);
 					read(socket, buf);
+					socket.shutdownInput();
+					socket.shutdownOutput();
+					socket.close();
 					buf.flip();
 					/* TODO this probably isn't correct */
 					String note = StandardCharsets.UTF_8.decode(buf).toString();
-					System.out.println("Downloaded Note: \"" + note + "\"");
+					System.out.println("Downloaded Note: " + note.codePoints().count() + " chars.");
 					Platform.runLater(() -> {
 						var doc = ReadOnlyStyledDocument.fromString(note, "", "", SegmentOps.styledTextOps());
 						notesContent.getContent().replace(0, notesContent.getContent().length(), doc);
@@ -163,7 +162,10 @@ public class DesktopProgram {
 				socket.write(lenBuf);
 				socket.write(noteBuf);
 				/* Wait for the server to close its socket */
-				socket.read(ByteBuffer.allocate(1));
+				//socket.read(ByteBuffer.allocate(1));
+				socket.shutdownInput();
+				socket.shutdownOutput();
+				socket.close();
 			} catch(IOException e) {
 				e.printStackTrace();
 			}
