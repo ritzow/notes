@@ -29,9 +29,7 @@ import org.fxmisc.richtext.model.SegmentOps;
 
 public class DesktopProgram {
 	private final Node toolbar;
-	private final InlineCssTextArea notesContent;
-	private final InlineCssTextArea ipField;
-	private final InlineCssTextArea usernameField;
+	private final InlineCssTextArea notesContent, ipField, usernameField;
 	private final Stage stage;
 
 	public DesktopProgram() throws IOException {
@@ -54,7 +52,6 @@ public class DesktopProgram {
 		scene.setFill(Color.TRANSPARENT);
 		toolbar = scene.lookup("#toolbar");
 		Button closeButton = (Button)scene.lookup("#closeButton");
-		Button uploadButton = (Button)scene.lookup("#uploadButton");
 		notesContent = (InlineCssTextArea)scene.lookup("#notesContent");
 		ipField = (InlineCssTextArea)scene.lookup("#ipField");
 		usernameField = (InlineCssTextArea)scene.lookup("#usernameField");
@@ -66,14 +63,25 @@ public class DesktopProgram {
 			});
 		});
 		
-		ipField.plainTextChanges().addObserver(this::onIpChange);
-		usernameField.plainTextChanges().addObserver(this::onUsernameChange);
+		ipField.plainTextChanges().subscribe(this::onIpChange);
+		usernameField.plainTextChanges().subscribe(this::onUsernameChange);
+		notesContent.plainTextChanges().subscribe(this::onNoteChange);
 
-		closeButton.setOnAction(event -> stage.close());
-		uploadButton.setOnAction(this::onUploadButton);
+		closeButton.setOnAction(event -> {
+			stage.hide();
+			upload();
+		});
 		stage.setScene(scene);
 	}
-
+	
+	private void onNoteChange(PlainTextChange plainTextChange) {
+		if(lastNoteChange == null || lastNoteChange.plusSeconds(1).isBefore(Instant.now())
+			&& notesContent.getContent().getLength() > 0) {
+			upload();
+			lastNoteChange = Instant.now();
+		}
+	}
+	
 	public void show() {
 		stage.show();
 	}
@@ -82,7 +90,7 @@ public class DesktopProgram {
 		queryUpdateNoteLocal();
 	}
 	
-	private volatile Instant lastUsernameChange;
+	private volatile Instant lastUsernameChange, lastNoteChange;
 
 	private void onUsernameChange(PlainTextChange change) {
 		lastUsernameChange = Instant.now();
@@ -139,6 +147,10 @@ public class DesktopProgram {
 	}
 
 	private void onUploadButton(ActionEvent event) {
+		upload();
+	}
+	
+	private void upload() {
 		String ip = ipField.getText();
 		try {
 			InetAddress address = InetAddresses.forString(ip);
