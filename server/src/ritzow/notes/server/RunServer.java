@@ -3,6 +3,7 @@
 package ritzow.notes.server;
 
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.io.Writer;
 import java.net.InetSocketAddress;
 import java.net.StandardProtocolFamily;
@@ -16,8 +17,14 @@ import net.ritzow.notes.share.NoteProto;
 import org.hsqldb.server.Server;
 
 public class RunServer {
-	public static void main(String[] args) {
-		System.out.println("Server started.");
+	
+	private static final int
+		MAX_USERNAME_LENGTH = 1_0000,
+		MAX_NOTE_LENGTH = 4_128;
+	
+	public static void main(String[] args) throws SQLException, IOException {
+		startDatabase();
+		Connection db = DriverManager.getConnection("jdbc:hsqldb:hsql://[::1]/notes");
 		
 		try(Selector select = Selector.open()) {
 			ServerSocketChannel
@@ -30,11 +37,13 @@ public class RunServer {
 				.bind(new InetSocketAddress("::1", 5432))
 				.configureBlocking(false)
 				.register(select, SelectionKey.OP_ACCEPT);
-			Connection db = openDatabase();
+			
 
 			try {
+				ExecutorService pool = Executors.newCachedThreadPool();
+				
 				do {
-					listen(select, db);
+					listen(pool, select, db);
 				} while(true);
 			} catch(SQLException e) {
 				try(var st = db.prepareStatement("SHUTDOWN")) {
@@ -44,14 +53,12 @@ public class RunServer {
 					throwables.printStackTrace();
 				}
 			}
-		} catch(IOException | SQLException e) {
-			e.printStackTrace();
 		}
 	}
-
-	private static Connection openDatabase() throws SQLException {
+	
+	private static Server startDatabase() {
 		Server server = new Server();
-		server.setErrWriter(null);
+		server.setErrWriter(new PrintWriter(System.out));
 		server.setLogWriter(null);
 		server.setSilent(true);
 		server.setTrace(false);
@@ -60,29 +67,18 @@ public class RunServer {
 		server.setDatabasePath(0, "file:testdb/db");
 		server.setAddress("::1");
 		server.start();
-		//DriverManager.getConnection("jdbc:hsqldb:file:server/db;shutdown=true");
-		return DriverManager.getConnection("jdbc:hsqldb:hsql://[::1]/notes");
+		return server;
 	}
 
-	private static void listen(Selector select, Connection db) throws IOException, SQLException {
+	private static void listen(ExecutorService pool, Selector select, Connection db) throws IOException, SQLException {
 		select.select();
-
-		ExecutorService pool = Executors.newCachedThreadPool();
 
 		for(var key : select.selectedKeys()) {
 			if(key.channel() instanceof ServerSocketChannel serv) {
-				SocketChannel connection = serv.accept();
-				pool.execute(() -> {
-					try {
-						process(db, connection);
-					} catch(ClosedByInterruptException e) {
-						System.out.println(connection + " closed by interrupt");
-					} catch(IOException | SQLException e) {
-						e.printStackTrace();
-					}
-				});
+				SocketChannel conn = serv.accept();
+				pool.execute(() -> process(db, conn));
 			} else {
-				throw new RuntimeException("Unknown channel " + key.channel());
+				throw new RuntimeException("Unknown channel type for " + key.channel());
 			}
 		}
 
@@ -93,7 +89,6 @@ public class RunServer {
 		//https://devblogs.microsoft.com/azure-sql/the-insert-if-not-exists-challenge-a-solution/
 		try(CallableStatement call = db.prepareCall("call update_user_note(?, ?, ?)")) {
 			call.setString(1, username);
-			/* TODO truncate? */
 			Clob handle = db.createClob();
 			try(Writer writer = handle.setCharacterStream(1)) {
 				writer.write(note);
@@ -127,66 +122,67 @@ public class RunServer {
 		}
 	}
 
-	private static final int
-		MAX_USERNAME_LENGTH = 1_0000,
-		MAX_NOTE_LENGTH = 4_128;
-
-	private static void process(Connection db, SocketChannel conn) throws IOException, SQLException {
-		System.out.println("Opened connection to " + conn.getRemoteAddress());
-		ByteBuffer dst = ByteBuffer.allocate(Integer.BYTES);
-		
-		readBytes(conn, dst, Byte.BYTES);
-		
-		switch(dst.flip().get()) {
-			case NoteProto.MSG_QUERY -> {
-				readBytes(conn, dst.clear(), Integer.BYTES);
-				int usernameLength = dst.flip().getInt();
-				String user = readUsername(conn, usernameLength);
-				String noteText = getNote(db, user);
-				if(noteText != null) {
-					System.out.println("Retrieved note text: " + noteText.length() + " characters");
-				} else {
-					System.out.println("No note text");
-					noteText = "";
-				}
-				ByteBuffer note = StandardCharsets.UTF_8.encode(noteText);
-				dst.clear().putInt(note.remaining()).flip();
-				conn.write(new ByteBuffer[]{dst, note});
-			}
+	private static void process(Connection db, SocketChannel conn) {
+		try {
+			System.out.println("Opened connection to " + conn.getRemoteAddress());
+			ByteBuffer dst = ByteBuffer.allocate(Integer.BYTES);
 			
-			case NoteProto.MSG_UPDATE -> {
-				readBytes(conn, dst.clear(), Integer.BYTES);
-				int usernameLength = dst.getInt(0);
-				
-				if(usernameLength > MAX_USERNAME_LENGTH) {
-					throw new RuntimeException("username length " + usernameLength + " longer than " + MAX_USERNAME_LENGTH);
-				}
-				
-				dst = ByteBuffer.allocateDirect(usernameLength);
-				readBytes(conn, dst, usernameLength);
-				String username = StandardCharsets.UTF_8.decode(dst.flip()).toString();
-				dst = ByteBuffer.allocate(Integer.BYTES);
-				readBytes(conn, dst, Integer.BYTES);
-				int noteLength = dst.flip().getInt();
-				
-				if(noteLength > MAX_NOTE_LENGTH) {
-					throw new RuntimeException("note length " + noteLength + " longer than " + MAX_NOTE_LENGTH);
-				}
-				
-				dst = dst.capacity() >= noteLength ? dst.clear() : ByteBuffer.allocateDirect(noteLength);
-				readBytes(conn, dst, noteLength);
-				saveNote(db, username, StandardCharsets.UTF_8.decode(dst.flip()).toString());
-			}
+			readBytes(conn, dst, Byte.BYTES);
 			
-			default -> {
-				System.out.println("Received unknown message type from client");
+			switch(dst.flip().get()) {
+				case NoteProto.MSG_UPDATE -> processQuery(db, conn, dst);
+				case NoteProto.MSG_QUERY -> processUpdate(db,conn, dst);
+				default -> System.out.println("Received unknown message type from client");
 			}
+			System.out.println("Closing connection to " + conn.getRemoteAddress());
+			conn.shutdownInput();
+			conn.shutdownOutput();
+			conn.close();
+		} catch(ClosedByInterruptException e) {
+			System.out.println(conn + " closed by interrupt");
+		} catch(IOException | SQLException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	private static void processUpdate(Connection db, SocketChannel conn, ByteBuffer dst) throws IOException, SQLException {
+		readBytes(conn, dst.clear(), Integer.BYTES);
+		int usernameLength = dst.flip().getInt();
+		String user = readUsername(conn, usernameLength);
+		String noteText = getNote(db, user);
+		if(noteText != null) {
+			System.out.println("Retrieved note text: " + noteText.length() + " characters");
+		} else {
+			System.out.println("No note text");
+			noteText = "";
+		}
+		ByteBuffer note = StandardCharsets.UTF_8.encode(noteText);
+		dst.clear().putInt(note.remaining()).flip();
+		conn.write(new ByteBuffer[]{dst, note});
+	}
+	
+	private static void processQuery(Connection db, SocketChannel conn, ByteBuffer dst) throws IOException, SQLException {
+		readBytes(conn, dst.clear(), Integer.BYTES);
+		int usernameLength = dst.getInt(0);
+		
+		if(usernameLength > MAX_USERNAME_LENGTH) {
+			throw new RuntimeException("username length " + usernameLength + " longer than " + MAX_USERNAME_LENGTH);
 		}
 		
-		conn.shutdownInput();
-		conn.shutdownOutput();
-		System.out.println("Closing connection to " + conn.getRemoteAddress());
-		conn.close();
+		dst = ByteBuffer.allocateDirect(usernameLength);
+		readBytes(conn, dst, usernameLength);
+		String username = StandardCharsets.UTF_8.decode(dst.flip()).toString();
+		dst = ByteBuffer.allocate(Integer.BYTES);
+		readBytes(conn, dst, Integer.BYTES);
+		int noteLength = dst.flip().getInt();
+		
+		if(noteLength > MAX_NOTE_LENGTH) {
+			throw new RuntimeException("note length " + noteLength + " longer than " + MAX_NOTE_LENGTH);
+		}
+		
+		dst = dst.capacity() >= noteLength ? dst.clear() : ByteBuffer.allocateDirect(noteLength);
+		readBytes(conn, dst, noteLength);
+		saveNote(db, username, StandardCharsets.UTF_8.decode(dst.flip()).toString());
 	}
 	
 	private static String readUsername(ReadableByteChannel conn, int usernameLength) throws IOException {
